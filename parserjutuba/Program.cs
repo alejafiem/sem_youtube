@@ -5,9 +5,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
-namespace YoutubeSpeechToText
+namespace parserjutuba
 {
     enum Categories
     {
@@ -25,7 +26,7 @@ namespace YoutubeSpeechToText
             var yt = new YoutubeConverter();
             foreach (Categories category in (Categories[])Enum.GetValues(typeof(Categories)))
             {
-                var lines = File.ReadLines(source + category.ToString() +".txt");
+                var lines = File.ReadLines(source + category.ToString() + ".txt");
                 foreach (var line in lines)
                 {
                     string url = "https://www.youtube.com/watch?v=" + line;
@@ -37,13 +38,24 @@ namespace YoutubeSpeechToText
                     File.Delete(source + line + "_stereo.wav");
 
                     AudioToText(source + $"{line}.wav", source + category.ToString() + "/" + $"{line}.txt");
-
+                    WaitForFile(source + line + ".wav");
                     File.Delete(source + line + ".wav");
                 }
             }
 
+            Console.WriteLine("Parsing...");
+            var parser = new TextDataParser();
+            foreach (Categories category in (Categories[])Enum.GetValues(typeof(Categories)))
+            {
+                foreach (string file in Directory.EnumerateFiles(source + category.ToString() + "/", "*.txt"))
+                {
+                    string fileContent = File.ReadLines(file).First();
+                    parser.Parse(source, fileContent, category.ToString());
+                }
+            }
+            Console.WriteLine("Data parsed to data.txt");
 
-
+            Console.WriteLine("KONIEC");
             Console.Read();
         }
 
@@ -61,19 +73,43 @@ namespace YoutubeSpeechToText
             Console.WriteLine(TimeSpan.FromTicks(remainder));
             string content = "";
             Console.WriteLine(file.TotalTime);
-            for (int i = 0; i <= count; i++)
+
+            List<Task<string>> taskList = new List<Task<string>>();
+            TimeSpan lastTrimEnd = TimeSpan.FromMinutes(0);
+            for (int i = 1; i <= count+1; i++)
             {
                 var name = "trim" + i + ".wav";
-                var cutEnd = TimeSpan.FromMinutes(count) - TimeSpan.FromMinutes(i + 1) + remainderSpan + TimeSpan.FromSeconds(6.5);
-                if (i == count)
+                var cutEnd = file.TotalTime - TimeSpan.FromMinutes(i) + TimeSpan.FromSeconds(i*3);
+                var cutStart = lastTrimEnd + TimeSpan.FromSeconds(1.5);
+                if (i == 1)
                 {
-                    cutEnd = TimeSpan.FromMinutes(0);
+                    cutStart = lastTrimEnd;
                 }
 
-                WavFileUtils.TrimWavFile(audioName, name, TimeSpan.FromMinutes(i), cutEnd);
-                content += " " + SpeechToText(name);
+                if (i == count+1)
+                {
+                    cutEnd = TimeSpan.FromMinutes(0);
+                    if (file.TotalTime - cutStart - cutEnd > TimeSpan.FromMinutes(1))
+                    {
+                        cutEnd = file.TotalTime - (cutStart + TimeSpan.FromSeconds(57));
+                    }
+                        
+                }
+
+                lastTrimEnd = file.TotalTime - cutEnd;
+
+                Console.WriteLine($"start: {cutStart} end: {file.TotalTime - cutEnd}");
+                WavFileUtils.TrimWavFile(audioName, name, cutStart, cutEnd);
+                Task<string> lastTask = Task<string>.Factory.StartNew(() => SpeechToText(name));
+                taskList.Add(lastTask);
             }
 
+            Task.WaitAll(taskList.ToArray());
+
+            foreach (var item in taskList)
+            {
+                content += " " + item.Result;
+            }
 
             using (StreamWriter writetext = new StreamWriter(textName, true, Encoding.UTF8))
             {
@@ -104,15 +140,46 @@ namespace YoutubeSpeechToText
                 LanguageCode = "pl-PL"
             }, RecognitionAudio.FromFile(file));
 
+            Console.WriteLine("Transcript of " + file + " ready.");
+
             foreach (var result in response.Results)
             {
                 foreach (var alternative in result.Alternatives)
                 {
-                    Console.WriteLine(alternative.Transcript);
+                    //Console.WriteLine(alternative.Transcript);
                     fileContent += alternative.Transcript;
                 }
             }
             return fileContent;
+        }
+
+        public static bool IsFileReady(string filename)
+        {
+            try
+            {
+                using (FileStream inputStream = File.Open(filename, FileMode.Open, FileAccess.Read, FileShare.None))
+                    return inputStream.Length > 0;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        public static void WaitForFile(string filename)
+        {
+            while (!IsFileReady(filename)) { }
+        }
+
+        public static void CmdExecute()
+        {
+            System.Diagnostics.Process process = new System.Diagnostics.Process();
+            System.Diagnostics.ProcessStartInfo startInfo = new System.Diagnostics.ProcessStartInfo();
+            startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Normal;
+            startInfo.FileName = "cmd.exe";
+            startInfo.Arguments = "/C copy /b Image1.jpg + Archive.rar Image2.jpg";
+            process.StartInfo = startInfo;
+            process.Start();
         }
     }
 }

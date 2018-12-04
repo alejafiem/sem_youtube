@@ -8,14 +8,16 @@ using System.Text;
 using System.Threading.Tasks;
 using VideoLibrary;
 
-namespace YoutubeSpeechToText
+namespace parserjutuba
 {
     class YoutubeConverter
     {
         public void Convert(string source, string url, string videoId)
         {
             var youtube = YouTube.Default;
+            Console.WriteLine("Downloading video...");
             var vid = youtube.GetVideo(url);
+            Console.WriteLine("video - " + vid.Title + " downloaded");
             File.WriteAllBytes(source + videoId, vid.GetBytes());
 
             var inputFile = new MediaFile { Filename = source + videoId };
