@@ -1,4 +1,4 @@
-work directory : "C:/sem/"
+working directory : "C:/sem/"
 
 4 categories: muzyka, polityka, nauka_technologia, sport
 
